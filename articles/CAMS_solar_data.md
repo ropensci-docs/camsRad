@@ -1,0 +1,126 @@
+# Working with CAMS solar data
+
+## CAMS Radiation Service
+
+The CAMS Radiation Service provides time series of global, direct, and
+diffuse irradiations on horizontal surface, and direct Irradiation on
+normal plane for the actual weather conditions as well as for clear-sky
+conditions. The data can be accessed manually on the CAMS Radiation
+Service
+[site](http://www.soda-pro.com/web-services/radiation/cams-radiation-service).
+The service is part of the [Copernicus Atmosphere Monitoring
+Service](http://atmosphere.copernicus.eu/) (CAMS).
+
+- The geographical coverage is the field-of-view of the Meteosat
+  satellite, roughly speaking Europe, Africa, Atlantic Ocean, Middle
+  East (-66 to 66 degrees in both latitudes and longitudes).
+- The time coverage of data is from 2004-02-01 up to 2 days ago. Data
+  are available with a time step ranging from 15 min to 1 month. The
+  service allows time steps of 1 min as well, these will be interpolated
+  values from the 15 min time steps (accounting for changes in clear-sky
+  conditions).
+- The horizontal resolution is the original pixel of the Meteosat
+  images, 3-5 km. The CAMS Radiation Service has currently (as of
+  2016-11-01) limited the amount of requests to 15 per day. This limit
+  may evolve.
+
+## Authentication
+
+To access the CAMS Radiation Service you need to register at
+<http://www.soda-pro.com/web-services/radiation/cams-radiation-service>.
+The email you use at the registration step will be used for
+authentication, and need to be set with
+[`cams_set_user()`](https://docs.ropensci.org/camsRad/reference/cams_set_user.md).
+
+``` r
+
+# Authentication
+cams_set_user("your@email.com") # An email registered at soda-pro.com
+```
+
+## Retrieve hourly solar data
+
+[`cams_get_radiation()`](https://docs.ropensci.org/camsRad/reference/cams_get_radiation.md)
+and
+[`cams_get_radiation()`](https://docs.ropensci.org/camsRad/reference/cams_get_radiation.md)
+are convenience wrappers that retrieves CAMS solar data straight into a
+R data frame. The example bellow retrieves hourly radiation data for the
+location 60° latitude and 15° longitude for the period 2016-01-01 to
+2016-01-15.
+
+``` r
+
+library(camsRad)
+
+df <- cams_get_radiation(
+  lat=60, lng=15, # Latitude & longitude coordinates 
+  date_begin="2016-07-01", date_end="2016-07-01", # Date range
+  time_step="PT01H") # Use hourly time step
+```
+
+As seen above the
+[`cams_get_radiation()`](https://docs.ropensci.org/camsRad/reference/cams_get_radiation.md)
+prints additional information about the data, these can be suppressed by
+wrapping the call with
+[`suppressMessages()`](https://rdrr.io/r/base/message.html). Next the
+date frame is printed.
+
+``` r
+
+print(df)
+```
+
+The first column holds the timestamp information. It follows the
+convention of giving solar radiation as the sum during the previous
+hour. E.g. the timestamp of 14:00 shows the solar radiation during
+13:00-14:00.
+
+## Advanced retrievals
+
+To use other data formats and to save data to the disk we need to use
+the
+[`cams_api()`](https://docs.ropensci.org/camsRad/reference/cams_api.md).
+The example bellow writes daily solar radiation in netCDF format to the
+disk. You need to have the `ncdf4` package installed.
+
+``` r
+
+library(ncdf4)
+
+filename <- paste0(tempfile(), ".nc")
+
+r <- cams_api(
+  60, 15, "2016-06-01", "2016-07-1", # Latitude/longitude and date range 
+  format="application/x-netcdf", # specifies output format as netCDF
+  time_step = "P01D", # daily sum is specified
+  filename=filename)
+
+# Access the on disk stored netCDF file
+nc <- nc_open(filename)  
+
+# List names of available variables
+names(nc$var)
+
+# Create data.frame with datetime and global horizontal irradiation
+df <- data.frame(
+  timestamp = as.POSIXct(nc$dim$time$vals, "UTC", origin="1970-01-01"),
+  GHI = ncvar_get(nc, "GHI"))
+df$timestamp <- df$timestamp-3600*24 # shift timestamp 24 hours backwards
+
+nc_close(nc) # close connection
+
+# And plot it
+par(mar=c(4.5,4,0.8,1))
+plot(df, type="b", ylab="GHI, Wh/m2,day", xlab="2016")
+```
+
+Note that the *timestamp* follows the convention of giving solar
+radiation as the sum during the previous time step. This is often
+correct when working with hourly data. But when working with daily (or
+monthly) data it is more common to have the *timestamp* at the starting
+point of summation. The `df$timestamp-3600*24`part achieves this for
+daily data.
+
+To get the data in *csv* or *json* format instead of *netCDF*, just
+change the *format* parameter to “application/csv” or “application/json”
+(and the filename extension to *.csv* or *.json* respectively).
